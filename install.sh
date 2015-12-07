@@ -318,9 +318,3 @@ if [ "$NFS_Server" == "yes" ]; then
 	echo "Prepare setting Cluster ......"
 	Install_Cluster
 fi
-
-
-
-
-
-
