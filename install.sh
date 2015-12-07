@@ -5,8 +5,8 @@
 
 # check root permission
 if [ ${EUID} -ne 0 ]; then
-	echo "This script must be run as root" 
-	exit 1
+   echo "This script must be run as root" 
+   exit 1
 fi
 
 # check L4T version
@@ -234,10 +234,12 @@ function Install_Cluster(){
 		CMD="hostname -I;"
 		CMD="${CMD} set +o history;"
 		# Edit /etc/hosts
-		CMD="${CMD} echo ${password} | sudo -S bash -c 'cat ~/hosts >> /etc/hosts;'"
+		CMD="${CMD} echo ${password} | sudo -S bash -c 'cat ~/hosts >> /etc/hosts;';"
 		# ssh authorized
-		CMD="${CMD} touch ~/.ssh/authorized_key"
-		CMD="${CMD} echo ${password} | sudo -S apt-add-repository -y universe"
+		CMD="${CMD} touch ~/.ssh/authorized_key;"
+		CMD="${CMD} cat ~/.ssh/file.rsa.pub >> ~/.ssh/authorized_key;"
+		# apt-get install software
+		CMD="${CMD} echo ${password} | sudo -S apt-add-repository -y universe;"
 		CMD="${CMD} echo ${password} | sudo -S apt-get update -qq;"
 		CMD="${CMD} echo ${password} | sudo -S apt-get install -qq -y nfs-common;"
 		CMD="${CMD} set -o history;"
@@ -318,3 +320,9 @@ if [ "$NFS_Server" == "yes" ]; then
 	echo "Prepare setting Cluster ......"
 	Install_Cluster
 fi
+
+
+
+
+
+
