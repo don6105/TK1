@@ -14,6 +14,9 @@ VERSION=`head -n 1 /etc/nv_tegra_release`
 VERSION="${VERSION:3:2}.${VERSION:27:1}"
 echo "L4T R$VERSION"
 
+# ======================================================================
+#                         Function defined
+# ======================================================================
 function Enable_Static_IP(){
 	address=(`grep ^address install.conf | tr -d ' ' | cut -d = -f 2 | awk '{print tolower($0)}' | sed -e 's/,/\n/g'`)
 	netmask=(`grep ^netmask install.conf | tr -d ' ' | cut -d = -f 2 | awk '{print tolower($0)}' | sed -e 's/,/\n/g'`)
@@ -185,11 +188,27 @@ function Install_Qt(){
 }
 
 function Install_Cluster(){
-	# echo $Server_IP
-	# network=192.168.0   IPstart=101   IPend=107
-	network=`echo ${Client_IP} | cut -d '-' -f 1 | cut -d '.' -f 1-3`
-	IPstart=`echo ${Client_IP} | cut -d '-' -f 1 | cut -d '.' -f 4`
-	IPend=`echo ${Client_IP} | cut -d '-' -f 2`
+	# transform from installl.conf format to an IP() array
+	IP=()
+	IFS=',' read -ra ADDR <<< "${Client_IP}"
+	#master=1, client start from 2.
+	node_k=2
+	for i in "${ADDR[@]}"; do
+		r=`echo ${i} | grep '-'`
+		if [ $? -eq 0 ]; then
+			network=`echo ${i} | cut -d '-' -f 1 | cut -d '.' -f 1-3`
+			start=`echo ${i} | cut -d '-' -f 1 | cut -d '.' -f 4`
+			end=`echo ${i} | cut -d '-' -f 2`
+			for j in $(seq ${start} ${end})
+			do
+				IP+=("${network}.${j} node${node_k}")
+				node_k=$((node_k+1))
+			done
+		else
+			IP+=("${i} node${node_k}")
+			node_k=$((node_k+1))
+		fi
+	done
 	
 	# Avoid password show in history, stop history recording
 	set +o history
@@ -198,43 +217,53 @@ function Install_Cluster(){
 	echo ""                      > hosts
 	echo "#NFS Cluster setting" >> hosts
 	echo "${Server_IP} node1"   >> hosts
-	j="2"
-	for i in $(seq ${IPstart} ${IPend})
+	for i in "${IP[@]}"
 	do
-		echo "${network}.${i} node${j}" >> hosts
-		j=$((j+1))
+		echo "${i}" >> hosts
 	done
 	
-	# ===================================
+	
+	# =============================================
 	#               Master
-	# ===================================
-	#r=`apt-get -qq -y install nfs-server`
-	#r=`cat hosts >> /etc/hosts`
+	# =============================================
+	# Check if OpenMPI is installed or not. Call function Install_OpenMPI if it's not installed.
+	r=`which mpicc`
+	if [ -n "$r" ]; then
+		echo "Install_OpenMPI ..."
+		Install_OpenMPI
+	fi
+	# Install software
+	r=`apt-get -qq -y install nfs-server`
+	# Edit /etc/hosts
+	r=`cat hosts >> /etc/hosts`
+	# Set login without passwd
 	r=`ssh-keygen -q -f file.rsa -t rsa -N ''`
 	r=`mv file.rsa ~/.ssh/file.rsa`
+	# NFS folder permission
+	r=`echo "/mirror*(rw,sync)" | sudo tee –a /etc/exports`
 	
-	# ===================================
+	# =============================================
 	#               Client
-	# ===================================
-	for i in $(seq ${IPstart} ${IPend})
+	# =============================================
+	for i in "${IP[@]}"
 	do
 		# ssh -o StrictHostKeyChecking=no : Add it to known hosts when first connect.
 		# Copy hosts to all clients
-		sshpass -p ${password} scp -o StrictHostKeyChecking=no hosts ${username}@${network}.${i}:~
+		sshpass -p ${password} scp -o StrictHostKeyChecking=no hosts ${username}@${i}:~ &
 		# Copy file.rsa.pub key to all clients
-		sshpass -p ${password} scp -o StrictHostKeyChecking=no file.rsa.pub ${username}@${network}.${i}:~/.ssh/
+		sshpass -p ${password} scp -o StrictHostKeyChecking=no file.rsa.pub ${username}@${i}:~/.ssh/ &
 	done
 	#Parallel execute with & and wait
 	wait
 	
-	for i in $(seq ${IPstart} ${IPend})
+	for i in "${IP[@]}"
 	do
 		# ssh -o StrictHostKeyChecking=no : Add it to known hosts when first connect.
 		# setting all clients
 		CMD="hostname -I;"
 		CMD="${CMD} set +o history;"
 		# Edit /etc/hosts
-		CMD="${CMD} echo ${password} | sudo -S bash -c 'cat ~/hosts >> /etc/hosts;';"
+		CMD="${CMD} echo ${password} | sudo -S bash -c 'cat ~/hosts >> /etc/hosts';"
 		# ssh authorized
 		CMD="${CMD} touch ~/.ssh/authorized_key;"
 		CMD="${CMD} cat ~/.ssh/file.rsa.pub >> ~/.ssh/authorized_key;"
@@ -242,16 +271,56 @@ function Install_Cluster(){
 		CMD="${CMD} echo ${password} | sudo -S apt-add-repository -y universe;"
 		CMD="${CMD} echo ${password} | sudo -S apt-get update -qq;"
 		CMD="${CMD} echo ${password} | sudo -S apt-get install -qq -y nfs-common;"
+		# Mounting nfs folder 
+		CMD="${CMD} echo ${password} | sudo -S mkdir /mirror;"
+		CMD="${CMD} echo ${password} | sudo -S mount ${Server_IP}:/mirror /mirror"
 		CMD="${CMD} set -o history;"
-		sshpass -p ${password} ssh -o StrictHostKeyChecking=no ${username}@${network}.${i} ${CMD} &
+		sshpass -p ${password} ssh -o StrictHostKeyChecking=no ${username}@${i} ${CMD} &
 	done
 	wait
 	
 	# Restart history recording
 	set -o history
+	echo "Install_Cluster finished."
 }
 
-# read from install.conf file
+function Install_Apache(){
+	r=`apt-get install -qq -y apache2`
+	if [ $? -eq 0 ]; then
+		echo "Install_Apache finished."
+		exit 0
+	fi
+	echo "Install_Apache failed."
+	exit 1
+}
+function Install_PHP(){
+	r=`apt-get install -qq -y php5 php-pear php5-mysql`
+	if [ $? -eq 0 ]; then
+		r=`service apache2 restart`
+		if [ $? -eq 0 ]; then
+			echo "Install_Apache finished."
+			exit 0
+		fi
+	fi
+	echo "Install_Apache failed."
+	exit 1
+}
+function Install_MySQL(){
+	r=`echo "mysql-server mysql-server/root_password password ${password}" | debconf-set-selections`
+	r=`echo "mysql-server mysql-server/root_password_again password ${password}" | debconf-set-selections`
+	r=`apt-get install -qq -y mysql-server`
+	if [ $? -eq 0 ]; then
+		echo "MySQL password for root: ${password}"
+		echo "Install_MySQL finished."
+		exit 0
+	fi
+	echo "Install_MySQL failed."
+	exit 1
+}
+
+# ======================================================================
+#                     Read from install.conf file
+# ======================================================================
 if [ -f "install.conf" ]; then
 	username=(`grep -i ^username install.conf | tr -d ' ' | cut -d = -f 2 | awk '{print tolower($0)}'`)
 	password=(`grep -i ^password install.conf | tr -d ' ' | cut -d = -f 2 | awk '{print tolower($0)}'`)
@@ -265,17 +334,23 @@ if [ -f "install.conf" ]; then
 	OpenCV=(`grep -i ^OpenCV install.conf | tr -d ' ' | cut -d = -f 2 | awk '{print tolower($0)}'`)
 	Qt=(`grep -i ^Qt4.8 install.conf | tr -d ' ' | cut -d = -f 2 | awk '{print tolower($0)}'`)
 	
-	#Cluster setting
+	# Cluster setting
 	NFS_Server=(`grep -i ^NFS_Server install.conf | tr -d ' ' | cut -d = -f 2 | awk '{print tolower($0)}'`)
 	Server_IP=(`grep -i ^Server_IP install.conf | tr -d ' ' | cut -d = -f 2 | awk '{print tolower($0)}'`)
 	Client_IP=(`grep -i ^Client_IP install.conf | tr -d ' ' | cut -d = -f 2 | awk '{print tolower($0)}'`)
+	
+	# Web
+	Apache=(`grep -i ^Apache install.conf | tr -d ' ' | cut -d = -f 2 | awk '{print tolower($0)}'`)
+	PHP=(`grep -i ^PHP install.conf | tr -d ' ' | cut -d = -f 2 | awk '{print tolower($0)}'`)
+	MySQL=(`grep -i ^MySQL install.conf | tr -d ' ' | cut -d = -f 2 | awk '{print tolower($0)}'`)
 else
 	echo "install.conf: file not found."
 	exit 1
 fi
 
-
-# call function to do
+# ======================================================================
+#                       Call function to do
+# ======================================================================
 if [ "$Static_IP" == "yes" ]; then
 	echo "Prepare setup Static IP......"
 	Enable_Static_IP
@@ -319,6 +394,21 @@ fi
 if [ "$NFS_Server" == "yes" ]; then
 	echo "Prepare setting Cluster ......"
 	Install_Cluster
+fi
+
+if [ "$Apache" == "yes" ]; then
+	echo "Prepare install Apache ......"
+	Install_Apache
+fi
+
+if [ "$PHP" == "yes" ]; then
+	echo "Prepare install PHP ......"
+	Install_PHP
+fi
+
+if [ "$MySQL" == "yes" ]; then
+	echo "Prepare install MySQL ......"
+	Install_MySQL
 fi
 
 
