@@ -1,7 +1,7 @@
 #!/bin/bash
 #Program:
-#  install softwares which defined in installl.conf
-#2015/11/18  Author:undersky <don0910129285@gmail.com>
+#  Install softwares which defined in installl.conf
+#2015/12/07  Author:undersky <don0910129285@gmail.com>
 
 # check root permission
 if [ ${EUID} -ne 0 ]; then
