@@ -1,7 +1,7 @@
 #!/bin/bash
 #Program:
-#  Install softwares which defined in installl.conf
-#2015/12/07  Author:undersky <don0910129285@gmail.com>
+#  install softwares which defined in installl.conf
+#2015/11/18  Author:undersky <don0910129285@gmail.com>
 
 # check root permission
 if [ ${EUID} -ne 0 ]; then
@@ -273,7 +273,9 @@ function Install_Cluster(){
 		CMD="${CMD} echo ${password} | sudo -S apt-get install -qq -y nfs-common;"
 		# Mounting nfs folder 
 		CMD="${CMD} echo ${password} | sudo -S mkdir /mirror;"
-		CMD="${CMD} echo ${password} | sudo -S mount ${Server_IP}:/mirror /mirror"
+		CMD="${CMD} echo ${password} | sudo -S mount ${Server_IP}:/mirror /mirror;"
+		CMD="${CMD} echo ${password} | sudo -S bash -c 'echo \'node1:/mirror /mirror nfs defaults 0 0\' >> /etc/fstab';"
+		
 		CMD="${CMD} set -o history;"
 		sshpass -p ${password} ssh -o StrictHostKeyChecking=no ${username}@${i} ${CMD} &
 	done
