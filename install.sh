@@ -57,11 +57,11 @@ function Install_Common(){
 		r=`apt-get install -qq -y build-essential sshpass vim`
 		if [ $? -eq 0 ]; then
 			echo "Install_Common finished.";
-			exit 0
+			return 0
 		fi
 	fi
 	echo "Install_Common failed.";
-	exit 1
+	return 1
 }
 
 # install CUDA6.5
@@ -85,15 +85,13 @@ function Install_CUDA(){
 				if [ $? -eq 0  ]; then
 					r=`usermod -a -G video $USER`
 					if [ $? -eq 0  ]; then
-						r=`echo "#CUDA-6.5 bin & library paths:" >> ~/.bashrc`
-						r=`echo "export PATH=/usr/local/cuda/bin:\$PATH" >> ~/.bashrc`
-						r=`echo "export LD_LIBRARY_PATH=/usr/local/cuda/lib:\$LD_LIBRARY_PATH" >> ~/.bashrc`
-						r=`source ~/.bashrc`
-						if [ $? -eq 0  ]; then
-							r=`rm cuda-6.5_armhf.deb`
-							echo "Install_CUDA finished."
-							exit 0
-						fi
+						echo "#CUDA-6.5 bin & library paths:" >> ~/.bashrc
+						echo "export PATH=/usr/local/cuda/bin:\$PATH" >> ~/.bashrc
+						echo "export LD_LIBRARY_PATH=/usr/local/cuda/lib:\$LD_LIBRARY_PATH" >> ~/.bashrc
+						source ~/.bashrc
+						r=`rm cuda-6.5_armhf.deb`
+						echo "Install_CUDA finished."
+						return 0
 					fi
 				fi
 			fi
@@ -101,7 +99,7 @@ function Install_CUDA(){
 	fi
 	r=`rm cuda-6.5_armhf.deb`
 	echo "Install_CUDA failed."
-	exit 1
+	return 1
 }
 
 function Install_OpenMPI(){
@@ -123,15 +121,15 @@ function Install_OpenMPI(){
 					echo "make install ..."
 					r=`make install &> /dev/null || exit 1`
 					if [ $? -eq 0  ]; then
-						r=`echo "#OpenMPI-1.8.8 bin & library paths:" >> ~/.bashrc`
-						r=`echo "export PATH=/mirror/openmpi-1.8.8/bin:\$PATH" >> ~/.bashrc`
-						r=`echo "export LD_LIBRARY_PATH=/mirror/openmpi-1.8.8/lib:\$LD_LIBRARY_PATH" >> ~/.bashrc`
+						echo "#OpenMPI-1.8.8 bin & library paths:" >> ~/.bashrc
+						echo "export PATH=/mirror/openmpi-1.8.8/bin:\$PATH" >> ~/.bashrc
+						echo "export LD_LIBRARY_PATH=/mirror/openmpi-1.8.8/lib:\$LD_LIBRARY_PATH" >> ~/.bashrc
 						r=`source ~/.bashrc`
 						if [ $? -eq 0  ]; then
 							r=`cd ..`
 							r=`rm -rf openmpi-1.8.8 openmpi.tar.gz`
 							echo "Install_OpenMPI finished."
-							exit 0
+							return 0
 						fi
 					fi
 				fi
@@ -141,17 +139,17 @@ function Install_OpenMPI(){
 	r=`cd ..`
 	r=`rm -rf openmpi-1.8.8 openmpi.tar.gz`
 	echo "Install_OpenMPI failed."
-	exit 1
+	return 1
 }
 
 function Install_OpenGL(){
 	r=`apt-get -qq -y install build-essential libgl1-mesa-dev libglu1-mesa-dev freeglut3-dev`
 	if [ $? -eq 0 ]; then
 		echo "Install_OpenGL finished."
-		exit 0
+		return 0
 	fi
 	echo "Install_OpenGL failed."
-	exit 1
+	return 1
 }
 
 function Install_OpenCV(){
@@ -169,22 +167,22 @@ function Install_OpenCV(){
 		if [ $? -eq 0  ]; then
 			r=`rm libopencv4tegra_2.4.10.2_armhf.deb`
 			echo "Install_OpenCV finished."
-			exit 0
+			return 0
 		fi
 	fi
 	r=`rm libopencv4tegra_2.4.10.2_armhf.deb`
 	echo "Install_OpenCV failed."
-	exit 1
+	return 1
 }
 
 function Install_Qt(){
 	r=`sudo apt-get -qq -y install qt4-dev-tools libqt4-dev libqt4-core libqt4-gui libqt4-opengl`
 	if [ $? -eq 0  ]; then
 		echo "Install_Qt4.8 finished."
-		exit 0
+		return 0
 	fi
 	echo "Install_Qt4.8 failed."
-	exit 1
+	return 1
 }
 
 function Install_Cluster(){
@@ -290,10 +288,10 @@ function Install_Apache(){
 	r=`apt-get install -qq -y apache2`
 	if [ $? -eq 0 ]; then
 		echo "Install_Apache finished."
-		exit 0
+		return 0
 	fi
 	echo "Install_Apache failed."
-	exit 1
+	return 1
 }
 function Install_PHP(){
 	r=`apt-get install -qq -y php5 php-pear php5-mysql`
@@ -301,11 +299,11 @@ function Install_PHP(){
 		r=`service apache2 restart`
 		if [ $? -eq 0 ]; then
 			echo "Install_Apache finished."
-			exit 0
+			return 0
 		fi
 	fi
 	echo "Install_Apache failed."
-	exit 1
+	return 1
 }
 function Install_MySQL(){
 	r=`echo "mysql-server mysql-server/root_password password ${password}" | debconf-set-selections`
@@ -314,10 +312,10 @@ function Install_MySQL(){
 	if [ $? -eq 0 ]; then
 		echo "MySQL password for root: ${password}"
 		echo "Install_MySQL finished."
-		exit 0
+		return 0
 	fi
 	echo "Install_MySQL failed."
-	exit 1
+	return 1
 }
 
 # ======================================================================
@@ -347,7 +345,7 @@ if [ -f "install.conf" ]; then
 	MySQL=(`grep -i ^MySQL install.conf | tr -d ' ' | cut -d = -f 2 | awk '{print tolower($0)}'`)
 else
 	echo "install.conf: file not found."
-	exit 1
+	return 1
 fi
 
 # ======================================================================
@@ -413,6 +411,14 @@ if [ "$MySQL" == "yes" ]; then
 	Install_MySQL
 fi
 
+echo "==========================================="
+echo ""
+echo "After whole scrpit finished,"
+echo "Execute to reload setting:"
+echo ""
+echo "         $ source ~/.bashrc"
+echo ""
+echo "==========================================="
 
 
 
