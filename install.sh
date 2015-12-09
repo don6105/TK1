@@ -124,13 +124,11 @@ function Install_OpenMPI(){
 						echo "#OpenMPI-1.8.8 bin & library paths:" >> ~/.bashrc
 						echo "export PATH=/mirror/openmpi-1.8.8/bin:\$PATH" >> ~/.bashrc
 						echo "export LD_LIBRARY_PATH=/mirror/openmpi-1.8.8/lib:\$LD_LIBRARY_PATH" >> ~/.bashrc
-						r=`source ~/.bashrc`
-						if [ $? -eq 0  ]; then
-							r=`cd ..`
-							r=`rm -rf openmpi-1.8.8 openmpi.tar.gz`
-							echo "Install_OpenMPI finished."
-							return 0
-						fi
+						source ~/.bashrc
+						r=`cd ..`
+						r=`rm -rf openmpi-1.8.8 openmpi.tar.gz`
+						echo "Install_OpenMPI finished."
+						return 0
 					fi
 				fi
 			fi
