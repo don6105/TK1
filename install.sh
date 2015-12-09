@@ -191,8 +191,8 @@ function Install_Cluster(){
 	# transform from installl.conf format to an IP() array
 	IP=()
 	IFS=',' read -ra ADDR <<< "${Client_IP}"
-	#master=1, client start from 2.
-	node_k=2
+	#master=master, client start from 1.
+	node_k=1
 	for i in "${ADDR[@]}"; do
 		r=`echo ${i} | grep '-'`
 		if [ $? -eq 0 ]; then
@@ -216,7 +216,7 @@ function Install_Cluster(){
 	# Generate hosts file
 	echo ""                      > hosts
 	echo "#NFS Cluster setting" >> hosts
-	echo "${Server_IP} node1"   >> hosts
+	echo "${Server_IP} master"   >> hosts
 	for i in "${IP[@]}"
 	do
 		echo "${i}" >> hosts
