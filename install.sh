@@ -54,7 +54,7 @@ function Install_Common(){
 	r=`apt-add-repository -y universe`
 	r=`apt-get -qq update`
 	if [ $? -eq 0 ]; then
-		r=`apt-get install -qq -y build-essential sshpass vim`
+		r=`apt-get install -qq -y build-essential sshpass vim openssh-server make cmake cmake-curses-gui g++`
 		if [ $? -eq 0 ]; then
 			echo "Install_Common finished.";
 			return 0
@@ -85,6 +85,7 @@ function Install_CUDA(){
 				if [ $? -eq 0  ]; then
 					r=`usermod -a -G video $USER`
 					if [ $? -eq 0  ]; then
+						echo "" >> ~/.bashrc
 						echo "#CUDA-6.5 bin & library paths:" >> ~/.bashrc
 						echo "export PATH=/usr/local/cuda/bin:\$PATH" >> ~/.bashrc
 						echo "export LD_LIBRARY_PATH=/usr/local/cuda/lib:\$LD_LIBRARY_PATH" >> ~/.bashrc
@@ -121,11 +122,12 @@ function Install_OpenMPI(){
 					echo "make install ..."
 					r=`make install &> /dev/null || exit 1`
 					if [ $? -eq 0  ]; then
+						echo "" >> ~/.bashrc
 						echo "#OpenMPI-1.8.8 bin & library paths:" >> ~/.bashrc
 						echo "export PATH=/mirror/openmpi-1.8.8/bin:\$PATH" >> ~/.bashrc
 						echo "export LD_LIBRARY_PATH=/mirror/openmpi-1.8.8/lib:\$LD_LIBRARY_PATH" >> ~/.bashrc
 						source ~/.bashrc
-						r=`cd ..`
+						cd ..
 						r=`rm -rf openmpi-1.8.8 openmpi.tar.gz`
 						echo "Install_OpenMPI finished."
 						return 0
@@ -134,14 +136,14 @@ function Install_OpenMPI(){
 			fi
 		fi
 	fi
-	r=`cd ..`
+	cd ..
 	r=`rm -rf openmpi-1.8.8 openmpi.tar.gz`
 	echo "Install_OpenMPI failed."
 	return 1
 }
 
 function Install_OpenGL(){
-	r=`apt-get -qq -y install build-essential libgl1-mesa-dev libglu1-mesa-dev freeglut3-dev`
+	r=`apt-get -qq -y install build-essential libgl1-mesa-dev libglu1-mesa-dev freeglut3-dev mesa-utils`
 	if [ $? -eq 0 ]; then
 		echo "Install_OpenGL finished."
 		return 0
@@ -164,8 +166,12 @@ function Install_OpenCV(){
 		r=`dpkg -i libopencv4tegra_2.4.10.2_armhf.deb`
 		if [ $? -eq 0  ]; then
 			r=`rm libopencv4tegra_2.4.10.2_armhf.deb`
-			echo "Install_OpenCV finished."
-			return 0
+			r=`sudo apt-get -qq update`
+			r=`sudo apt-get install -qq -y libopencv4tegra libopencv4tegra-dev libavformat-dev libavutil-dev libswscale-dev libv4l-dev libeigen3-dev libglew1.6-dev libgtk2.0-dev`
+			if [ $? -eq 0  ]; then
+				echo "Install_OpenCV finished."
+				return 0
+			fi
 		fi
 	fi
 	r=`rm libopencv4tegra_2.4.10.2_armhf.deb`
@@ -188,7 +194,6 @@ function Install_Cluster(){
 	IP=()
 	IFS=',' read -ra ADDR <<< "${Client_IP}"
 	#master=master, client start from 1.
-	node_k=1
 	for i in "${ADDR[@]}"; do
 		r=`echo ${i} | grep '-'`
 		if [ $? -eq 0 ]; then
@@ -197,12 +202,10 @@ function Install_Cluster(){
 			end=`echo ${i} | cut -d '-' -f 2`
 			for j in $(seq ${start} ${end})
 			do
-				IP+=("${network}.${j} node${node_k}")
-				node_k=$((node_k+1))
+				IP+=("${network}.${j}")
 			done
 		else
-			IP+=("${i} node${node_k}")
-			node_k=$((node_k+1))
+			IP+=("${i}")
 		fi
 	done
 	
@@ -212,10 +215,12 @@ function Install_Cluster(){
 	# Generate hosts file
 	echo ""                      > hosts
 	echo "#NFS Cluster setting" >> hosts
-	echo "${Server_IP} master"   >> hosts
+	echo "${Server_IP} master"  >> hosts
+	node_k=1
 	for i in "${IP[@]}"
 	do
-		echo "${i}" >> hosts
+		echo "${i} node${node_k}" >> hosts
+		node_k=$((node_k+1))
 	done
 	
 	
@@ -233,10 +238,14 @@ function Install_Cluster(){
 	# Edit /etc/hosts
 	r=`cat hosts >> /etc/hosts`
 	# Set login without passwd
-	r=`ssh-keygen -q -f file.rsa -t rsa -N ''`
-	r=`mv file.rsa ~/.ssh/file.rsa`
+	r=`ssh-keygen -q -f file_rsa -t rsa -N ''`
+	r=`mv file_rsa ~/.ssh/id_rsa`
+	r=`chown ${username}:${username} ~/.ssh/id_rsa`
+	r=`chmod 700 ~/.ssh/id_rsa`
 	# NFS folder permission
-	r=`echo "/mirror*(rw,sync)" | sudo tee –a /etc/exports`
+	r=`echo "/mirror *(rw,sync,no_subtree_check)" | sudo tee -a /etc/exports`
+	r=`service nfs-kernel-server restart`
+	echo "Master setting finished ..."
 	
 	# =============================================
 	#               Client
@@ -247,7 +256,7 @@ function Install_Cluster(){
 		# Copy hosts to all clients
 		sshpass -p ${password} scp -o StrictHostKeyChecking=no hosts ${username}@${i}:~ &
 		# Copy file.rsa.pub key to all clients
-		sshpass -p ${password} scp -o StrictHostKeyChecking=no file.rsa.pub ${username}@${i}:~/.ssh/ &
+		sshpass -p ${password} scp -o StrictHostKeyChecking=no file_rsa.pub ${username}@${i}:~/.ssh/ &
 	done
 	#Parallel execute with & and wait
 	wait
@@ -261,22 +270,25 @@ function Install_Cluster(){
 		# Edit /etc/hosts
 		CMD="${CMD} echo ${password} | sudo -S bash -c 'cat ~/hosts >> /etc/hosts';"
 		# ssh authorized
-		CMD="${CMD} touch ~/.ssh/authorized_key;"
-		CMD="${CMD} cat ~/.ssh/file.rsa.pub >> ~/.ssh/authorized_key;"
+		CMD="${CMD} touch ~/.ssh/authorized_keys;"
+		CMD="${CMD} cat ~/.ssh/file_rsa.pub >> ~/.ssh/authorized_keys;"
 		# apt-get install software
 		CMD="${CMD} echo ${password} | sudo -S apt-add-repository -y universe;"
 		CMD="${CMD} echo ${password} | sudo -S apt-get update -qq;"
 		CMD="${CMD} echo ${password} | sudo -S apt-get install -qq -y nfs-common;"
-		# Mounting nfs folder 
+		#~ # Mounting nfs folder 
 		CMD="${CMD} echo ${password} | sudo -S mkdir /mirror;"
 		CMD="${CMD} echo ${password} | sudo -S mount ${Server_IP}:/mirror /mirror;"
-		CMD="${CMD} echo ${password} | sudo -S bash -c 'echo \'node1:/mirror /mirror nfs defaults 0 0\' >> /etc/fstab';"
+		CMD="${CMD} echo ${password} | sudo -S bash -c \"echo 'master:/mirror /mirror nfs defaults 0 0' >> /etc/fstab\";"
 		
+		CMD="${CMD} rm ~/hosts;"
 		CMD="${CMD} set -o history;"
-		sshpass -p ${password} ssh -o StrictHostKeyChecking=no ${username}@${i} ${CMD} &
+		sshpass -p ${password} ssh -o StrictHostKeyChecking=no ${username}@${i} "${CMD}" &
 	done
 	wait
+	echo "Client setting finished ..."
 	
+	r=`rm file_rsa*`
 	# Restart history recording
 	set -o history
 	echo "Install_Cluster finished."
@@ -417,8 +429,4 @@ echo ""
 echo "         $ source ~/.bashrc"
 echo ""
 echo "==========================================="
-
-
-
-
 
